@@ -1,4 +1,4 @@
 venv/
 __pycache__/
-experiments_data/*
-experiments_input_data/*
+/experiments_data/*
+/experiments_input_data/*
