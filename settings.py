@@ -1,6 +1,11 @@
 import os
 
-APP_PORT = int(os.getenv('APP_PORT') or 5001) # keep it on 5001, otherwise has to change in Dockerfile
+MAX_SIZE = int(os.getenv('MAX_SIZE') or 1024)
+AVG_SIZE = int(os.getenv('AVG_SIZE') or 256)
+MIN_SIZE = int(os.getenv('MIN_SIZE') or 64)
+
+CATEGORY_LENGTH = int(os.getenv('CATEGORY_LENGTH') or 1000)
+MAX_WORKERS = int(os.getenv('MAX_WORKERS') or 4)
 
 FILES_TOPIC = str(os.getenv('FILES_TOPIC') or 'FILES_TOPIC')
 FILES_SCHEMA_PATH = str(os.getenv('FILES_SCHEMA_PATH') or './avro_files/files_array.avsc')
