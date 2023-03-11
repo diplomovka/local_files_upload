@@ -10,7 +10,9 @@ from confluent_kafka.serialization import StringSerializer
 from confluent_kafka import SerializingProducer
 from fastcdc import fastcdc
 from serialization_classes.file_data import FileData
+from serialization_classes.files_list_data import FileDataList
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, wait
+from typing import List
 import settings
 
 
@@ -18,6 +20,10 @@ def file_data_to_dict(file_data, ctx):
     return dict(file_name=file_data.file_name, chunk=file_data.chunk,
                 chunk_hash=file_data.chunk_hash, chunk_serial_num=file_data.chunk_serial_num,
                 end_of_file=file_data.end_of_file, experiment_name=file_data.experiment_name)
+
+
+def files_list_data_to_dict(files_list_data, ctx):
+    return files_list_data.to_dict()
 
 
 def delivery_report(err, msg):
@@ -36,7 +42,7 @@ def set_up_producer():
 
     avro_serializer = AvroSerializer(schema_registry_client,
                                      schema_str,
-                                     file_data_to_dict)
+                                     files_list_data_to_dict)
 
     producer_conf = {
         'bootstrap.servers': settings.BOOTSTRAP_SERVERS,
@@ -47,11 +53,7 @@ def set_up_producer():
     return SerializingProducer(producer_conf)
 
 
-def send_data(file_name, min_size, avg_size, max_size, counter):
-    producer = set_up_producer()
-
-    producer.poll(0.0)
-
+def chunk_data(file_name, min_size, avg_size, max_size, counter):
     file = open(f'./experiments_input_data/{file_name}', 'rb')
     content = file.read()
     file.close()
@@ -59,23 +61,14 @@ def send_data(file_name, min_size, avg_size, max_size, counter):
     start = time.perf_counter_ns()
     results = list(fastcdc(content, min_size=min_size, avg_size=avg_size, max_size=max_size, fat=True, hf=sha256))
     end = time.perf_counter_ns()
-    
-    total_chunks = len(results)
-
-    for i, res in enumerate(results):
-        end_of_file = i == (total_chunks - 1)
-        file_data = FileData(file_name=file_name, chunk=res.data, chunk_hash=res.hash,
-                            chunk_serial_num=i, end_of_file=end_of_file, experiment_name=settings.EXPERIMENT_NAME)
-        producer.produce(topic=settings.FILES_TOPIC, key=str(uuid4()), value=file_data,
-                        on_delivery=delivery_report)
-        
-    producer.flush()
 
     if counter % 1000 == 0:
         print(counter)
 
     with open(f'experiments_data/{settings.EXPERIMENT_NAME}.csv', 'a') as f:
         f.write(f'{file_name};{(end-start) / 1000000}\n')
+
+    return results
 
 
 if __name__ == '__main__':
@@ -90,10 +83,42 @@ if __name__ == '__main__':
     with ProcessPoolExecutor(max_workers=8) as executor:
         future_results = []
         
+        producer = set_up_producer()
+
+        producer.poll(0.0)
+
         counter = 0
         for file_name in files_names:
-            future = executor.submit(send_data, file_name, min_size, avg_size, max_size, counter)
+            future = executor.submit(chunk_data, file_name, min_size, avg_size, max_size, counter)
             future_results.append(future)
             counter += 1
 
         wait(future_results)
+
+        counter = 0
+
+        for (future, file_name) in zip(future_results, files_names):
+            results = future.result()
+            total_chunks = len(results)
+
+            files_data:List[FileData] = []
+
+            for i, res in enumerate(results):
+                end_of_file = i == (total_chunks - 1)
+                file_data = FileData(file_name=file_name, chunk=res.data, chunk_hash=res.hash,
+                                    chunk_serial_num=i, end_of_file=end_of_file, experiment_name=settings.EXPERIMENT_NAME)
+                files_data.append(file_data)
+
+            producer.produce(topic=settings.FILES_TOPIC, key=str(uuid4()), value=FileDataList(files_data),
+                            on_delivery=delivery_report)
+
+            counter += 1
+
+            if counter % 1000 == 0:
+                print(counter)
+
+        print('Flushing...')
+
+        producer.flush()
+
+        print('Flushed...')
