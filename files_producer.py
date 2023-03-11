@@ -16,6 +16,11 @@ from typing import List
 import settings
 
 
+def create_directory(directory_name):
+    if not os.path.exists(directory_name) or not os.path.isdir(directory_name):
+        os.mkdir(directory_name)
+
+
 def file_data_to_dict(file_data, ctx):
     return dict(file_name=file_data.file_name, chunk=file_data.chunk,
                 chunk_hash=file_data.chunk_hash, chunk_serial_num=file_data.chunk_serial_num,
@@ -62,7 +67,7 @@ def chunk_data(file_name, min_size, avg_size, max_size):
     results = list(fastcdc(content, min_size=min_size, avg_size=avg_size, max_size=max_size, fat=True, hf=sha256))
     end = time.perf_counter_ns()
 
-    with open(f'experiments_data/{settings.EXPERIMENT_NAME}_chunking_time.csv', 'a') as f:
+    with open(f'experiments_data/{settings.EXPERIMENT_NAME}/{settings.EXPERIMENT_NAME}_chunking_time.csv', 'a') as f:
         f.write(f'{file_name};{(end-start) / 1000000}\n')
 
     return results
@@ -70,6 +75,8 @@ def chunk_data(file_name, min_size, avg_size, max_size):
 
 if __name__ == '__main__':
     time.sleep(settings.WAIT_BEFORE_START)
+
+    create_directory(f'{settings.EXPERIMENTS_DATA_DIR}/{settings.EXPERIMENT_NAME}')
 
     start_time = time.time()
 
@@ -122,5 +129,5 @@ if __name__ == '__main__':
 
     end_time = time.time()
 
-    with open(f'experiments_data/{settings.EXPERIMENT_NAME}_upload_time.txt', 'a') as f:
-        f.write(f'Total time in minutes: {(end_time - start_time) / 60}')
+    with open(f'experiments_data/{settings.EXPERIMENT_NAME}/{settings.EXPERIMENT_NAME}_upload_time.txt', 'a') as f:
+        f.write(f'Total execution time: {time.strftime("%H:%M:%S", time.gmtime(end_time - start_time))}')
