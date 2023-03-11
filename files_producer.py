@@ -10,6 +10,7 @@ from confluent_kafka.serialization import StringSerializer
 from confluent_kafka import SerializingProducer
 from fastcdc import fastcdc
 from serialization_classes.file_data import FileData
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, wait
 import settings
 
 
@@ -46,6 +47,37 @@ def set_up_producer():
     return SerializingProducer(producer_conf)
 
 
+def send_data(file_name, min_size, avg_size, max_size, counter):
+    producer = set_up_producer()
+
+    producer.poll(0.0)
+
+    file = open(f'./experiments_input_data/{file_name}', 'rb')
+    content = file.read()
+    file.close()
+
+    start = time.perf_counter_ns()
+    results = list(fastcdc(content, min_size=min_size, avg_size=avg_size, max_size=max_size, fat=True, hf=sha256))
+    end = time.perf_counter_ns()
+    
+    total_chunks = len(results)
+
+    for i, res in enumerate(results):
+        end_of_file = i == (total_chunks - 1)
+        file_data = FileData(file_name=file_name, chunk=res.data, chunk_hash=res.hash,
+                            chunk_serial_num=i, end_of_file=end_of_file, experiment_name=settings.EXPERIMENT_NAME)
+        producer.produce(topic=settings.FILES_TOPIC, key=str(uuid4()), value=file_data,
+                        on_delivery=delivery_report)
+        
+    producer.flush()
+
+    if counter % 1000 == 0:
+        print(counter)
+
+    with open(f'experiments_data/{settings.EXPERIMENT_NAME}.csv', 'a') as f:
+        f.write(f'{file_name};{(end-start) / 1000000}\n')
+
+
 if __name__ == '__main__':
     # time.sleep(settings.WAIT_BEFORE_START)
 
@@ -55,37 +87,13 @@ if __name__ == '__main__':
     avg_size = int(256)
     min_size = int(64)
 
-    producer = set_up_producer()
-
-    producer.poll(0.0)
-
-    counter = 0
-
-    for file_name in files_names:
-        file = open(f'./experiments_input_data/{file_name}', 'rb')
-        content = file.read()
-        file.close()
-
-        start = time.perf_counter_ns()
-        results = list(fastcdc(content, min_size=min_size, avg_size=avg_size, max_size=max_size, fat=True, hf=sha256))
-        end = time.perf_counter_ns()
+    with ProcessPoolExecutor(max_workers=8) as executor:
+        future_results = []
         
-        total_chunks = len(results)
+        counter = 0
+        for file_name in files_names:
+            future = executor.submit(send_data, file_name, min_size, avg_size, max_size, counter)
+            future_results.append(future)
+            counter += 1
 
-        for i, res in enumerate(results):
-            end_of_file = i == (total_chunks - 1)
-            file_data = FileData(file_name=file_name, chunk=res.data, chunk_hash=res.hash,
-                                chunk_serial_num=i, end_of_file=end_of_file, experiment_name=settings.EXPERIMENT_NAME)
-            producer.produce(topic=settings.FILES_TOPIC, key=str(uuid4()), value=file_data,
-                            on_delivery=delivery_report)
-            
-        counter += 1
-
-        if counter % 1000 == 0:
-            print(counter)
-
-        with open(f'experiments_data/{settings.EXPERIMENT_NAME}.csv', 'a') as f:
-            f.write(f'{file_name};{(end-start) / 1000000}\n')
-
-    print('\nFlushing records...')
-    producer.flush()
+        wait(future_results)
