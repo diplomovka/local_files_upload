@@ -53,7 +53,7 @@ def set_up_producer():
     return SerializingProducer(producer_conf)
 
 
-def chunk_data(file_name, min_size, avg_size, max_size, counter):
+def chunk_data(file_name, min_size, avg_size, max_size):
     file = open(f'./experiments_input_data/{file_name}', 'rb')
     content = file.read()
     file.close()
@@ -61,9 +61,6 @@ def chunk_data(file_name, min_size, avg_size, max_size, counter):
     start = time.perf_counter_ns()
     results = list(fastcdc(content, min_size=min_size, avg_size=avg_size, max_size=max_size, fat=True, hf=sha256))
     end = time.perf_counter_ns()
-
-    if counter % 1000 == 0:
-        print(counter)
 
     with open(f'experiments_data/{settings.EXPERIMENT_NAME}.csv', 'a') as f:
         f.write(f'{file_name};{(end-start) / 1000000}\n')
@@ -74,51 +71,49 @@ def chunk_data(file_name, min_size, avg_size, max_size, counter):
 if __name__ == '__main__':
     # time.sleep(settings.WAIT_BEFORE_START)
 
-    files_names = os.listdir('./experiments_input_data')
+    f_names = os.listdir('./experiments_input_data')
+    total_f_names = len(f_names)
+    categories = [f_names[i:i+settings.CATEGORY_LENGTH]
+                   for i in range(0, total_f_names, settings.CATEGORY_LENGTH)]
+    
+    counter = 1
+    for files_names in categories:
+        with ProcessPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
+            future_results = []
+            
+            producer = set_up_producer()
 
-    max_size = int(1024)
-    avg_size = int(256)
-    min_size = int(64)
+            producer.poll(0.0)
 
-    with ProcessPoolExecutor(max_workers=8) as executor:
-        future_results = []
-        
-        producer = set_up_producer()
+            for file_name in files_names:
+                future = executor.submit(chunk_data, file_name, settings.MIN_SIZE, settings.AVG_SIZE, settings.MAX_SIZE)
+                future_results.append(future)
 
-        producer.poll(0.0)
+            wait(future_results)
 
-        counter = 0
-        for file_name in files_names:
-            future = executor.submit(chunk_data, file_name, min_size, avg_size, max_size, counter)
-            future_results.append(future)
-            counter += 1
+            for (future, file_name) in zip(future_results, files_names):
+                results = future.result()
+                total_chunks = len(results)
 
-        wait(future_results)
+                files_data:List[FileData] = []
 
-        counter = 0
+                for i, res in enumerate(results):
+                    end_of_file = i == (total_chunks - 1)
+                    file_data = FileData(file_name=file_name, chunk=res.data, chunk_hash=res.hash,
+                                        chunk_serial_num=i, end_of_file=end_of_file, experiment_name=settings.EXPERIMENT_NAME)
+                    files_data.append(file_data)
 
-        for (future, file_name) in zip(future_results, files_names):
-            results = future.result()
-            total_chunks = len(results)
+                producer.produce(topic=settings.FILES_TOPIC, key=str(uuid4()), 
+                                    value=FileDataList(files_data, last_file=counter == total_f_names, file_num=counter),
+                                    on_delivery=delivery_report)
 
-            files_data:List[FileData] = []
+                if counter % 1000 == 0:
+                    print(counter)
+                
+                counter += 1
 
-            for i, res in enumerate(results):
-                end_of_file = i == (total_chunks - 1)
-                file_data = FileData(file_name=file_name, chunk=res.data, chunk_hash=res.hash,
-                                    chunk_serial_num=i, end_of_file=end_of_file, experiment_name=settings.EXPERIMENT_NAME)
-                files_data.append(file_data)
+            print('Flushing...')
 
-            producer.produce(topic=settings.FILES_TOPIC, key=str(uuid4()), value=FileDataList(files_data),
-                            on_delivery=delivery_report)
+            producer.flush()
 
-            counter += 1
-
-            if counter % 1000 == 0:
-                print(counter)
-
-        print('Flushing...')
-
-        producer.flush()
-
-        print('Flushed...')
+            print('Flushed...')
