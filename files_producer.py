@@ -69,7 +69,7 @@ def chunk_data(file_name, min_size, avg_size, max_size):
 
 
 if __name__ == '__main__':
-    # time.sleep(settings.WAIT_BEFORE_START)
+    time.sleep(settings.WAIT_BEFORE_START)
 
     f_names = os.listdir('./experiments_input_data')
     total_f_names = len(f_names)
