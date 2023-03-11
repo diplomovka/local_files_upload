@@ -21,6 +21,8 @@
                     ]
                 }
             }
-        }
+        },
+        {"name": "last_file", "type": "boolean"},
+        {"name": "file_num", "type": "int"}
     ]
 }
