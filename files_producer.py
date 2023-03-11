@@ -62,7 +62,7 @@ def chunk_data(file_name, min_size, avg_size, max_size):
     results = list(fastcdc(content, min_size=min_size, avg_size=avg_size, max_size=max_size, fat=True, hf=sha256))
     end = time.perf_counter_ns()
 
-    with open(f'experiments_data/{settings.EXPERIMENT_NAME}.csv', 'a') as f:
+    with open(f'experiments_data/{settings.EXPERIMENT_NAME}_chunking_time.csv', 'a') as f:
         f.write(f'{file_name};{(end-start) / 1000000}\n')
 
     return results
@@ -70,6 +70,8 @@ def chunk_data(file_name, min_size, avg_size, max_size):
 
 if __name__ == '__main__':
     time.sleep(settings.WAIT_BEFORE_START)
+
+    start_time = time.time()
 
     f_names = os.listdir('./experiments_input_data')
     total_f_names = len(f_names)
@@ -117,3 +119,8 @@ if __name__ == '__main__':
             producer.flush()
 
             print('Flushed...')
+
+    end_time = time.time()
+
+    with open(f'experiments_data/{settings.EXPERIMENT_NAME}_upload_time.txt', 'a') as f:
+        f.write(f'Total time in minutes: {(end_time - start_time) / 60}')
