@@ -130,4 +130,4 @@ if __name__ == '__main__':
     end_time = time.time()
 
     with open(f'experiments_data/{settings.EXPERIMENT_NAME}/{settings.EXPERIMENT_NAME}_upload_time.txt', 'a') as f:
-        f.write(f'Total execution time: {time.strftime("%H:%M:%S", time.gmtime(end_time - start_time))}')
+        f.write(f'Total execution time in seconds: {end_time - start_time}')
