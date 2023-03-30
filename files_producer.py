@@ -2,7 +2,7 @@
 
 import os
 from uuid import uuid4
-from hashlib import sha256
+from hashlib import sha256, sha1, md5
 import time
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
@@ -11,9 +11,16 @@ from confluent_kafka import SerializingProducer
 from fastcdc import fastcdc
 from serialization_classes.file_data import FileData
 from serialization_classes.files_list_data import FileDataList
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, wait
+from concurrent.futures import ProcessPoolExecutor, wait
 from typing import List
 import settings
+
+
+hash_functions = {
+    'SHA256': sha256,
+    'SHA1': sha1,
+    'MD5': md5
+}
 
 
 def create_directory(directory_name):
@@ -58,13 +65,13 @@ def set_up_producer():
     return SerializingProducer(producer_conf)
 
 
-def chunk_data(file_name, min_size, avg_size, max_size):
+def chunk_data(file_name, min_size, avg_size, max_size, hf):
     file = open(f'./experiments_input_data/{file_name}', 'rb')
     content = file.read()
     file.close()
 
     start = time.perf_counter_ns()
-    results = list(fastcdc(content, min_size=min_size, avg_size=avg_size, max_size=max_size, fat=True, hf=sha256))
+    results = list(fastcdc(content, min_size=min_size, avg_size=avg_size, max_size=max_size, fat=True, hf=hf))
     end = time.perf_counter_ns()
 
     with open(f'experiments_data/{settings.EXPERIMENT_NAME}/{settings.EXPERIMENT_NAME}_chunking_time.csv', 'a') as f:
@@ -75,6 +82,10 @@ def chunk_data(file_name, min_size, avg_size, max_size):
 
 if __name__ == '__main__':
     time.sleep(settings.WAIT_BEFORE_START)
+
+    hash_function = hash_functions[settings.HASH_FUNCTION]
+
+    print(f'Hashing with {settings.HASH_FUNCTION}')
 
     create_directory(f'{settings.EXPERIMENTS_DATA_DIR}/{settings.EXPERIMENT_NAME}')
 
@@ -95,7 +106,7 @@ if __name__ == '__main__':
             producer.poll(0.0)
 
             for file_name in files_names:
-                future = executor.submit(chunk_data, file_name, settings.MIN_SIZE, settings.AVG_SIZE, settings.MAX_SIZE)
+                future = executor.submit(chunk_data, file_name, settings.MIN_SIZE, settings.AVG_SIZE, settings.MAX_SIZE, hash_function)
                 future_results.append(future)
 
             wait(future_results)
