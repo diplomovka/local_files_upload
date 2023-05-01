@@ -8,7 +8,6 @@ from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import StringSerializer
 from confluent_kafka import SerializingProducer
-from fastcdc import fastcdc
 from serialization_classes.file_data import FileData
 from serialization_classes.files_list_data import FileDataList
 from concurrent.futures import ProcessPoolExecutor, wait
@@ -21,6 +20,12 @@ hash_functions = {
     'SHA1': sha1,
     'MD5': md5
 }
+
+
+class ChunkData:
+    def __init__(self, data, hash):
+        self.data = data
+        self.hash = hash
 
 
 def create_directory(directory_name):
@@ -65,13 +70,20 @@ def set_up_producer():
     return SerializingProducer(producer_conf)
 
 
-def chunk_data(file_name, min_size, avg_size, max_size, hf):
+def chunk_data(file_name, chunk_size, hf):
     file = open(f'./experiments_input_data/{file_name}', 'rb')
     content = file.read()
+    content_length = len(content)
     file.close()
 
+    results = []
+
     start = time.perf_counter_ns()
-    results = list(fastcdc(content, min_size=min_size, avg_size=avg_size, max_size=max_size, fat=True, hf=hf))
+    for i in range(0, content_length, chunk_size):
+        chunk = content[i:i+chunk_size]
+        hash_object = hf(chunk)
+        results.append(ChunkData(chunk, hash_object.hexdigest()))
+
     end = time.perf_counter_ns()
 
     with open(f'experiments_data/{settings.EXPERIMENT_NAME}/{settings.EXPERIMENT_NAME}_chunking_time.csv', 'a') as f:
@@ -106,7 +118,7 @@ if __name__ == '__main__':
             producer.poll(0.0)
 
             for file_name in files_names:
-                future = executor.submit(chunk_data, file_name, settings.MIN_SIZE, settings.AVG_SIZE, settings.MAX_SIZE, hash_function)
+                future = executor.submit(chunk_data, file_name, settings.CHUNK_SIZE, hash_function)
                 future_results.append(future)
 
             wait(future_results)

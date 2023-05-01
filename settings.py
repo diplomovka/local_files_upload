@@ -2,9 +2,7 @@ import os
 
 HASH_FUNCTION = str(os.getenv('HASH_FUNCTION') or 'SHA256')
 
-MAX_SIZE = int(os.getenv('MAX_SIZE') or 1024)
-AVG_SIZE = int(os.getenv('AVG_SIZE') or 256)
-MIN_SIZE = int(os.getenv('MIN_SIZE') or 64)
+CHUNK_SIZE = int(os.getenv('CHUNK_SIZE') or 1000)
 
 CATEGORY_LENGTH = int(os.getenv('CATEGORY_LENGTH') or 1000)
 MAX_WORKERS = int(os.getenv('MAX_WORKERS') or 4)
