@@ -9,7 +9,6 @@ from confluent_kafka.schema_registry.avro import AvroSerializer
 from confluent_kafka.serialization import StringSerializer
 from confluent_kafka import SerializingProducer
 from serialization_classes.file_data import FileData
-from serialization_classes.files_list_data import FileDataList
 from concurrent.futures import ProcessPoolExecutor, wait
 from typing import List
 import settings
@@ -22,7 +21,7 @@ hash_functions = {
 }
 
 
-class ChunkData:
+class DataAndHash:
     def __init__(self, data, hash):
         self.data = data
         self.hash = hash
@@ -34,13 +33,8 @@ def create_directory(directory_name):
 
 
 def file_data_to_dict(file_data, ctx):
-    return dict(file_name=file_data.file_name, chunk=file_data.chunk,
-                chunk_hash=file_data.chunk_hash, chunk_serial_num=file_data.chunk_serial_num,
-                end_of_file=file_data.end_of_file, experiment_name=file_data.experiment_name)
-
-
-def files_list_data_to_dict(files_list_data, ctx):
-    return files_list_data.to_dict()
+    return dict(file_name=file_data.file_name, data=file_data.data,
+                chunk_hash=file_data.data_hash, experiment_name=file_data.experiment_name)
 
 
 def delivery_report(err, msg):
@@ -59,7 +53,7 @@ def set_up_producer():
 
     avro_serializer = AvroSerializer(schema_registry_client,
                                      schema_str,
-                                     files_list_data_to_dict)
+                                     file_data_to_dict)
 
     producer_conf = {
         'bootstrap.servers': settings.BOOTSTRAP_SERVERS,
@@ -70,20 +64,16 @@ def set_up_producer():
     return SerializingProducer(producer_conf)
 
 
-def chunk_data(file_name, chunk_size, hf):
+def chunk_data(file_name, hf):
     file = open(f'./experiments_input_data/{file_name}', 'rb')
     content = file.read()
-    content_length = len(content)
     file.close()
 
     results = []
 
     start = time.perf_counter_ns()
-    for i in range(0, content_length, chunk_size):
-        chunk = content[i:i+chunk_size]
-        hash_object = hf(chunk)
-        results.append(ChunkData(chunk, hash_object.hexdigest()))
-
+    hash_object = hf(content)
+    results.append(DataAndHash(content, hash_object.hexdigest()))
     end = time.perf_counter_ns()
 
     with open(f'experiments_data/{settings.EXPERIMENT_NAME}/{settings.EXPERIMENT_NAME}_chunking_time.csv', 'a') as f:
@@ -118,26 +108,19 @@ if __name__ == '__main__':
             producer.poll(0.0)
 
             for file_name in files_names:
-                future = executor.submit(chunk_data, file_name, settings.CHUNK_SIZE, hash_function)
+                future = executor.submit(chunk_data, file_name, hash_function)
                 future_results.append(future)
 
             wait(future_results)
 
             for (future, file_name) in zip(future_results, files_names):
                 results = future.result()
-                total_chunks = len(results)
-
-                files_data:List[FileData] = []
 
                 for i, res in enumerate(results):
-                    end_of_file = i == (total_chunks - 1)
                     file_data = FileData(file_name=file_name, chunk=res.data, chunk_hash=res.hash,
-                                        chunk_serial_num=i, end_of_file=end_of_file, experiment_name=settings.EXPERIMENT_NAME)
-                    files_data.append(file_data)
-
-                producer.produce(topic=settings.FILES_TOPIC, key=str(uuid4()), 
-                                    value=FileDataList(files_data, last_file=counter == total_f_names, file_num=counter),
-                                    on_delivery=delivery_report)
+                                        experiment_name=settings.EXPERIMENT_NAME)
+                    producer.produce(topic=settings.FILES_TOPIC, key=str(uuid4()),
+                                     value=file_data, on_delivery=delivery_report)
 
                 if counter % 1000 == 0:
                     print(counter)
