@@ -32,8 +32,7 @@ def create_directory(directory_name):
 
 
 def file_data_to_dict(file_data, ctx):
-    return dict(file_name=file_data.file_name, data=file_data.data,
-                data_hash=file_data.data_hash, experiment_name=file_data.experiment_name, last_file=file_data.last_file)
+    return file_data.to_dict()
 
 
 def delivery_report(err, msg):
@@ -117,9 +116,9 @@ if __name__ == '__main__':
 
                 for i, res in enumerate(results):
                     file_data = FileData(file_name=file_name, data=res.data, data_hash=res.hash,
-                                        experiment_name=settings.EXPERIMENT_NAME, last_file= counter == total_f_names)
+                                        experiment_name=settings.EXPERIMENT_NAME, last_file=counter == total_f_names)
                     producer.produce(topic=settings.FILES_TOPIC, key=str(uuid4()),
-                                     value=file_data, on_delivery=delivery_report)
+                                    value=file_data, on_delivery=delivery_report)
 
                 if counter % 1000 == 0:
                     print(counter)
