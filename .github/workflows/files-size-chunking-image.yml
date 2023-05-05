@@ -2,7 +2,7 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "fixed-size-chunking" ]
+    branches: [ "file-size-chunking" ]
 
 jobs:
 
@@ -21,4 +21,4 @@ jobs:
       uses: docker/build-push-action@v3
       with:
         push: true
-        tags: ykbhlvck/local_files_producer:fixed-size-chunking
+        tags: ykbhlvck/local_files_producer:files-size-chunking
