@@ -118,7 +118,7 @@ if __name__ == '__main__':
 
                 for i, res in enumerate(results):
                     file_data = FileData(file_name=file_name, chunk=res.data, chunk_hash=res.hash,
-                                        experiment_name=settings.EXPERIMENT_NAME)
+                                        experiment_name=settings.EXPERIMENT_NAME, last_file= counter == total_f_names)
                     producer.produce(topic=settings.FILES_TOPIC, key=str(uuid4()),
                                      value=file_data, on_delivery=delivery_report)
 
